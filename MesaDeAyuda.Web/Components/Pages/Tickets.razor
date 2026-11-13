@@ -1,0 +1,254 @@
+@page "/"
+@inject RepositorioTickets Repositorio
+
+<PageTitle>Mesa de Ayuda</PageTitle>
+
+<h1>Mesa de Ayuda &mdash; Tickets de soporte</h1>
+
+@* ===== Cantidades (se recalculan en cada render) ===== *@
+<section class="contadores" aria-label="Cantidades de tickets">
+    <div class="contador"><span class="numero">@Repositorio.Contar()</span> Total</div>
+    <div class="contador"><span class="numero">@Repositorio.Contar(EstadoTicket.Abierto)</span> Abiertos</div>
+    <div class="contador"><span class="numero">@Repositorio.Contar(EstadoTicket.Cerrado)</span> Cerrados</div>
+    <div class="contador secundario">
+        En proceso: @Repositorio.Contar(EstadoTicket.EnProceso) &nbsp;|&nbsp;
+        Resueltos: @Repositorio.Contar(EstadoTicket.Resuelto)
+    </div>
+</section>
+
+<div class="rejilla">
+
+    @* ===== [1] Registrar ticket ===== *@
+    <section class="panel">
+        <h2>1. Registrar ticket</h2>
+
+        @if (mensajeRegistro is not null)
+        {
+            <div class="exito" role="status">@mensajeRegistro</div>
+        }
+
+        <label for="titulo">Título</label>
+        <input id="titulo" type="text" @bind="titulo" @bind:event="oninput" />
+        @if (errores.ContainsKey(Ticket.CampoTitulo))
+        {
+            <div class="error">@errores[Ticket.CampoTitulo]</div>
+        }
+
+        <label for="descripcion">Descripción</label>
+        <textarea id="descripcion" rows="3" @bind="descripcion" @bind:event="oninput"></textarea>
+        @if (errores.ContainsKey(Ticket.CampoDescripcion))
+        {
+            <div class="error">@errores[Ticket.CampoDescripcion]</div>
+        }
+
+        <label for="solicitante">Solicitante</label>
+        <input id="solicitante" type="text" @bind="solicitante" @bind:event="oninput" />
+        @if (errores.ContainsKey(Ticket.CampoSolicitante))
+        {
+            <div class="error">@errores[Ticket.CampoSolicitante]</div>
+        }
+
+        <label for="prioridad">Prioridad</label>
+        <select id="prioridad" @bind="prioridad">
+            @foreach (var p in Enum.GetValues<PrioridadTicket>())
+            {
+                <option value="@p">@p</option>
+            }
+        </select>
+        @if (errores.ContainsKey(Ticket.CampoPrioridad))
+        {
+            <div class="error">@errores[Ticket.CampoPrioridad]</div>
+        }
+
+        <div class="botones">
+            <button type="button" class="primario" @onclick="Guardar">Guardar</button>
+            <button type="button" @onclick="Limpiar">Limpiar</button>
+        </div>
+    </section>
+
+    @* ===== [2] Lista de tickets ===== *@
+    <section class="panel">
+        <h2>2. Lista de tickets</h2>
+
+        <div class="filtros">
+            <label for="filtro">Estado</label>
+            <select id="filtro" @bind="filtro">
+                <option value="Todos">Todos</option>
+                @foreach (var e in Enum.GetValues<EstadoTicket>())
+                {
+                    <option value="@e">@e.Texto()</option>
+                }
+            </select>
+
+            <label for="busqueda">Buscar por número</label>
+            <input id="busqueda" type="text" class="corto" @bind="busqueda" @bind:event="oninput" />
+            <button type="button" @onclick="Buscar">Buscar</button>
+        </div>
+
+        @if (mensajeLista is not null)
+        {
+            <div class="error">@mensajeLista</div>
+        }
+
+        @{
+            var lista = Repositorio.Listar(FiltroActual);
+        }
+
+        @if (lista.Count == 0)
+        {
+            <p class="vacio">No hay tickets con ese filtro</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Título</th>
+                        <th>Prioridad</th>
+                        <th>Estado</th>
+                        <th>Creado</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in lista)
+                    {
+                        <tr class="@(seleccionado?.Id == t.Id ? "seleccionada" : "")">
+                            <td>@t.Id</td>
+                            <td>@t.Titulo</td>
+                            <td>@t.Prioridad</td>
+                            <td><span class="@ClaseEstado(t.Estado)">@t.Estado.Texto()</span></td>
+                            <td>@t.FechaCreacion.ToString("dd/MM/yyyy")</td>
+                            <td><button type="button" @onclick="() => Seleccionar(t)">Ver</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @* ===== [3] Detalle y [4] Cambiar estado ===== *@
+    <section class="panel ancho">
+        @if (seleccionado is null)
+        {
+            <h2>3. Detalle del ticket</h2>
+            <p class="vacio">Seleccione un ticket con «Ver» o búsquelo por número.</p>
+        }
+        else
+        {
+            <h2>3. Detalle del ticket #@seleccionado.Id</h2>
+            <dl>
+                <dt>Título</dt><dd>@seleccionado.Titulo</dd>
+                <dt>Descripción</dt><dd>@seleccionado.Descripcion</dd>
+                <dt>Solicitante</dt><dd>@seleccionado.Solicitante</dd>
+                <dt>Prioridad</dt><dd>@seleccionado.Prioridad</dd>
+                <dt>Estado</dt><dd><span class="@ClaseEstado(seleccionado.Estado)">@seleccionado.Estado.Texto()</span></dd>
+                <dt>Creado</dt><dd>@seleccionado.FechaCreacion.ToString("dd/MM/yyyy HH:mm")</dd>
+                <dt>Actualizado</dt><dd>@seleccionado.FechaActualizacion.ToString("dd/MM/yyyy HH:mm")</dd>
+            </dl>
+
+            <h3>4. Cambiar estado</h3>
+            <div class="botones">
+                @foreach (var nuevo in Enum.GetValues<EstadoTicket>())
+                {
+                    <button type="button"
+                            class="@(seleccionado.Estado == nuevo ? "actual" : "")"
+                            @onclick="() => CambiarEstado(nuevo)">
+                        @nuevo.Texto()
+                    </button>
+                }
+            </div>
+
+            @if (mensajeEstado is not null)
+            {
+                <div class="@(errorEstado ? "error" : "exito")" role="status">@mensajeEstado</div>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    // --- Formulario de registro ---
+    private string titulo = "";
+    private string descripcion = "";
+    private string solicitante = "";
+    private PrioridadTicket prioridad = PrioridadTicket.Media;
+    private Dictionary<string, string> errores = new();
+    private string? mensajeRegistro;
+
+    // --- Lista / búsqueda ---
+    private string filtro = "Todos";
+    private string busqueda = "";
+    private string? mensajeLista;
+
+    // --- Detalle / cambio de estado ---
+    private Ticket? seleccionado;
+    private string? mensajeEstado;
+    private bool errorEstado;
+
+    private static string ClaseEstado(EstadoTicket estado) =>
+        "estado estado-" + estado.ToString().ToLowerInvariant();
+
+    private EstadoTicket? FiltroActual =>
+        Enum.TryParse<EstadoTicket>(filtro, out var e) ? e : null;
+
+    private void Guardar()
+    {
+        mensajeRegistro = null;
+        errores = Ticket.Validar(titulo, descripcion, solicitante, prioridad);
+
+        // Si hay errores no se crea nada y lo escrito se conserva.
+        if (errores.Count > 0)
+            return;
+
+        var ticket = Repositorio.Agregar(titulo, descripcion, solicitante, prioridad);
+        mensajeRegistro = $"Ticket #{ticket.Id} registrado correctamente";
+        titulo = descripcion = solicitante = "";
+        prioridad = PrioridadTicket.Media;
+    }
+
+    private void Limpiar()
+    {
+        titulo = descripcion = solicitante = "";
+        prioridad = PrioridadTicket.Media;
+        errores = new();
+        mensajeRegistro = null;
+    }
+
+    private void Buscar()
+    {
+        mensajeLista = null;
+
+        if (!int.TryParse(busqueda.Trim(), out var id) || id <= 0)
+        {
+            mensajeLista = "Escriba un número válido.";
+            return;
+        }
+
+        var ticket = Repositorio.ObtenerPorId(id);
+        if (ticket is null)
+        {
+            mensajeLista = $"No existe el ticket #{id}.";
+            return;
+        }
+
+        Seleccionar(ticket);
+    }
+
+    private void Seleccionar(Ticket ticket)
+    {
+        seleccionado = ticket;
+        mensajeEstado = null;
+        errorEstado = false;
+    }
+
+    private void CambiarEstado(EstadoTicket nuevo)
+    {
+        if (seleccionado is null)
+            return;
+
+        errorEstado = !seleccionado.TryCambiarEstado(nuevo, out var mensaje);
+        mensajeEstado = mensaje;
+    }
+}
