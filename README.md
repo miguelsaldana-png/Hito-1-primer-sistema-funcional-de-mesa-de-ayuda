@@ -2,7 +2,7 @@
 
 Aplicación web (Blazor Server, C#) para registrar y dar seguimiento a solicitudes de soporte técnico de una tienda con dos sucursales. Los tickets se guardan **en memoria** mientras la aplicación está en ejecución.
 
-**Autores:** Snyder Diaz, Miguel Saldaña
+**Autores:** Snyder Diaz 1-762-1088, Miguel Saldaña 4-829-484
 
 ## Documentación del proyecto
 
