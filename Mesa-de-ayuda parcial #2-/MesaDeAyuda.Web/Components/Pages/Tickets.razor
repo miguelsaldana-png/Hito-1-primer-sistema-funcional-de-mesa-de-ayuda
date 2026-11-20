@@ -1,0 +1,195 @@
+@page "/"
+@inject RepositorioTickets Repositorio
+@inject IJSRuntime JS
+
+<PageTitle>Mesa de Ayuda</PageTitle>
+<h1>Mesa de Ayuda — Tickets de soporte</h1>
+
+@if (!string.IsNullOrWhiteSpace(mensaje))
+{
+    <div class="@(esError ? "error" : "exito")" role="status">@mensaje</div>
+}
+
+<section class="contadores" aria-label="Cantidades de tickets">
+    <div class="contador"><span class="numero">@Total</span> Total</div>
+    <div class="contador"><span class="numero">@Abiertos</span> Abiertos</div>
+    <div class="contador"><span class="numero">@Cerrados</span> Cerrados</div>
+</section>
+
+<div class="rejilla">
+    <section class="panel">
+        <h2>@(editando ? "Editar ticket" : "Registrar ticket")</h2>
+        <label for="titulo">Título</label>
+        <input id="titulo" @bind="titulo" @bind:event="oninput" maxlength="80" />
+        @Error(Ticket.CampoTitulo)
+        <label for="descripcion">Descripción</label>
+        <textarea id="descripcion" rows="3" @bind="descripcion" @bind:event="oninput" maxlength="500"></textarea>
+        @Error(Ticket.CampoDescripcion)
+        <label for="solicitante">Solicitante</label>
+        <input id="solicitante" @bind="solicitante" @bind:event="oninput" maxlength="60" />
+        @Error(Ticket.CampoSolicitante)
+        <label for="prioridad">Prioridad</label>
+        <select id="prioridad" @bind="prioridad">
+            @foreach (var p in Enum.GetValues<PrioridadTicket>()) { <option value="@p">@p</option> }
+        </select>
+        @Error(Ticket.CampoPrioridad)
+        <div class="botones">
+            <button class="primario" type="button" @onclick="Guardar">@(editando ? "Guardar cambios" : "Registrar")</button>
+            <button type="button" @onclick="Limpiar">Cancelar / Limpiar</button>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Lista de tickets</h2>
+        <div class="filtros">
+            <label for="filtro">Filtrar por estado</label>
+            <select id="filtro" @bind="filtro">
+                <option value="Todos">Todos</option>
+                @foreach (var e in Enum.GetValues<EstadoTicket>()) { <option value="@e">@e.Texto()</option> }
+            </select>
+            <button type="button" @onclick="Refrescar">Aplicar filtro</button>
+            <button type="button" @onclick="MostrarTodos">Ver todos</button>
+        </div>
+        @{ var lista = ObtenerLista(); }
+        @if (lista.Count == 0)
+        {
+            <p class="vacio">No hay tickets que coincidan con el filtro seleccionado.</p>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>ID</th><th>Título</th><th>Prioridad</th><th>Estado</th><th>Acción</th></tr></thead>
+                <tbody>
+                    @foreach (var t in lista)
+                    {
+                        <tr class="@(seleccionado?.Id == t.Id ? "seleccionada" : "")">
+                            <td>@t.Id</td><td>@t.Titulo</td><td>@t.Prioridad</td><td>@t.Estado.Texto()</td>
+                            <td><button type="button" @onclick="() => Seleccionar(t.Id)">Ver</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="panel ancho">
+        <h2>Detalle del ticket</h2>
+        @if (seleccionado is null)
+        {
+            <p class="vacio">Seleccione un ticket para consultar sus datos.</p>
+        }
+        else
+        {
+            <dl>
+                <dt>Identificador</dt><dd>#@seleccionado.Id</dd>
+                <dt>Título</dt><dd>@seleccionado.Titulo</dd>
+                <dt>Descripción</dt><dd>@seleccionado.Descripcion</dd>
+                <dt>Solicitante</dt><dd>@seleccionado.Solicitante</dd>
+                <dt>Prioridad</dt><dd>@seleccionado.Prioridad</dd>
+                <dt>Estado</dt><dd>@seleccionado.Estado.Texto()</dd>
+                <dt>Creado</dt><dd>@seleccionado.FechaCreacion.ToString("dd/MM/yyyy HH:mm")</dd>
+                <dt>Actualizado</dt><dd>@seleccionado.FechaActualizacion.ToString("dd/MM/yyyy HH:mm")</dd>
+            </dl>
+            <div class="botones">
+                <button type="button" @onclick="PrepararEdicion" disabled="@(seleccionado.Estado == EstadoTicket.Cerrado)">Editar</button>
+                @foreach (var nuevoEstado in Enum.GetValues<EstadoTicket>())
+                {
+                    <button type="button" @onclick="() => CambiarEstado(nuevoEstado)"
+                            disabled="@(seleccionado.Estado == nuevoEstado || seleccionado.Estado == EstadoTicket.Cerrado)">
+                        Pasar a @nuevoEstado.Texto()
+                    </button>
+                }
+                <button type="button" @onclick="EliminarTicket">Eliminar</button>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private string titulo = "", descripcion = "", solicitante = "";
+    private PrioridadTicket prioridad = PrioridadTicket.Media;
+    private Dictionary<string, string> errores = new();
+    private string filtro = "Todos";
+    private Ticket? seleccionado;
+    private bool editando, esError;
+    private string? mensaje;
+
+    private int Total => Repositorio.Contar();
+    private int Abiertos => Repositorio.Contar(EstadoTicket.Abierto);
+    private int Cerrados => Repositorio.Contar(EstadoTicket.Cerrado);
+
+    private RenderFragment Error(string campo) => builder =>
+    {
+        if (errores.TryGetValue(campo, out var texto))
+        {
+            builder.OpenElement(0, "div"); builder.AddAttribute(1, "class", "error");
+            builder.AddContent(2, texto); builder.CloseElement();
+        }
+    };
+
+    private List<Ticket> ObtenerLista() =>
+        Repositorio.Listar(Enum.TryParse<EstadoTicket>(filtro, out var estado) ? estado : null);
+
+    private void Guardar()
+    {
+        mensaje = null; errores = Ticket.Validar(titulo, descripcion, solicitante, prioridad);
+        if (errores.Count > 0) { esError = true; mensaje = "Revise los campos indicados antes de continuar."; return; }
+        try
+        {
+            if (editando && seleccionado is not null)
+            {
+                Repositorio.Editar(seleccionado.Id, titulo, descripcion, solicitante, prioridad);
+                mensaje = $"El ticket #{seleccionado.Id} se actualizó correctamente.";
+                Seleccionar(seleccionado.Id);
+            }
+            else
+            {
+                var nuevo = Repositorio.Agregar(titulo, descripcion, solicitante, prioridad);
+                mensaje = $"Ticket #{nuevo.Id} registrado correctamente."; Seleccionar(nuevo.Id);
+            }
+            esError = false; LimpiarFormulario();
+        }
+        catch (Exception ex) { esError = true; mensaje = "No se pudo guardar: " + ex.Message; }
+    }
+
+    private void PrepararEdicion()
+    {
+        if (seleccionado is null) return;
+        titulo = seleccionado.Titulo; descripcion = seleccionado.Descripcion;
+        solicitante = seleccionado.Solicitante; prioridad = seleccionado.Prioridad;
+        editando = true; errores.Clear(); mensaje = $"Editando el ticket #{seleccionado.Id}."; esError = false;
+    }
+
+    private void CambiarEstado(EstadoTicket nuevoEstado)
+    {
+        if (seleccionado is null) return;
+        try
+        {
+            Repositorio.CambiarEstado(seleccionado.Id, nuevoEstado);
+            Seleccionar(seleccionado.Id);
+            mensaje = $"El estado del ticket se actualizó a {nuevoEstado.Texto()}.";
+            esError = false;
+        }
+        catch (Exception ex) { mensaje = ex.Message; esError = true; }
+    }
+
+    private async Task EliminarTicket()
+    {
+        if (seleccionado is null) return;
+        var id = seleccionado.Id;
+        var confirmar = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de eliminar el ticket #{id}? Esta acción no se puede deshacer.");
+        if (!confirmar) { mensaje = "Se canceló la eliminación. El ticket se conserva."; esError = false; return; }
+        try { Repositorio.Eliminar(id); seleccionado = null; Limpiar(); mensaje = $"El ticket #{id} fue eliminado."; esError = false; }
+        catch (Exception ex) { mensaje = "No se pudo eliminar: " + ex.Message; esError = true; }
+    }
+
+    private void Seleccionar(int id)
+    {
+        seleccionado = Repositorio.ObtenerPorId(id);
+        if (editando) LimpiarFormulario();
+    }
+    private void Refrescar() { if (seleccionado is not null) seleccionado = Repositorio.ObtenerPorId(seleccionado.Id); }
+    private void MostrarTodos() { filtro = "Todos"; Refrescar(); }
+    private void Limpiar() { LimpiarFormulario(); mensaje = null; }
+    private void LimpiarFormulario() { titulo = descripcion = solicitante = ""; prioridad = PrioridadTicket.Media; errores.Clear(); editando = false; }
+}
